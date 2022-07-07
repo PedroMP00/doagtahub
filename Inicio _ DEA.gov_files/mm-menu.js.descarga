@@ -1,0 +1,42 @@
+!function (document) {
+  'use strict';
+
+  document.addEventListener('DOMContentLoaded', function () {
+    var fullmenu = document.querySelector('#fullmenu');
+
+    if (fullmenu) {
+      new Mmenu(fullmenu, {
+        extensions: {
+          all: ['position-front', 'position-right', 'fx-menu-slide', 'border-full'],
+          '(max-width: 720px)': ['fullscreen']
+        },
+        classNames: {
+          selected: 'is-active'
+        },
+        lazySubmenus: {
+          load: true
+        },
+        keyboardNavigation: {
+          enable: 'default',
+          enhance: true
+        },
+        setSelected: {
+          hover: true,
+          parent: false
+        },
+        navbar: {
+          add: true,
+          title: 'Full Menu'
+        },
+        navbars: [{
+          position: 'top',
+          content: ['<a class="site-name" href="/" title="Home" rel="home" aria-label="Home"><h1 class="site-name__text">United States Drug Enforcement Administration</h1></a>', 'close']
+        }, {
+          position: 'bottom',
+          content: ['<ul class="menu menu--secondary"><li class="menu__item"><a class="menu__link" href="/submit-tip">Submit A Tip</a></li><li class="menu__item"><a class="menu__link" href="https://service.govdelivery.com/accounts/USDOJDEA/subscriber/new">Get Updates</a></li><li class="menu__item"><a class="menu__link  menu__link--search" href="https://search.dea.gov/search?query=&affiliate=justice-dea">Search</a></li></ul>']
+        }]
+      });
+      fullmenu.removeAttribute('hidden');
+    }
+  });
+}(document);
