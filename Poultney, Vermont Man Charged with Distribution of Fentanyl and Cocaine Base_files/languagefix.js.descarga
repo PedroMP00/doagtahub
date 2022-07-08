@@ -1,0 +1,5 @@
+(function ($) {
+  'use strict';
+
+  $('#block-languageswitcher li.en a').text('EN');
+})(jQuery, document);
