@@ -1,0 +1,323 @@
+//var divisionID = drupalSettings.division_to_display;
+var mapboxToken = drupalSettings.mapbox_token;
+var modulePath = "/" + drupalSettings.module_path;
+var markerPath = modulePath + '/markers/';
+
+var markerTypes = [
+  'division',
+  'district',
+  'resident',
+  'post-of-duty',
+  'regional',
+  'country',
+  'dea-foreign',
+  'sar',
+  'liaison',
+  'presence',
+  'narcotics'
+];
+
+var mapColor = drupalSettings.dea_division.map_color;
+var mapCenterLon = drupalSettings.dea_division.map_center_lon;
+var mapCenterLat = drupalSettings.dea_division.map_center_lat;
+var mapZoom = drupalSettings.dea_division.map_zoom;
+var divisionName = drupalSettings.dea_division.division_name;
+var divisionGeojson = drupalSettings.dea_division.geojson;
+var officesGeojson = JSON.parse(drupalSettings.dea_division.offices);
+
+var uri = window.location.pathname;
+
+var recentClicks=null;
+
+var divisionID = drupalSettings.map_type;
+var mapScope = drupalSettings.map_scope;
+
+// Default to domestic divisions map if division ID doesn't exist.
+if (divisionID === undefined) {
+  divisionID = 'domestic';
+}
+mapboxgl.accessToken = mapboxToken;
+var map = new mapboxgl.Map({
+  container: 'officemap', // container id
+  style: 'mapbox://styles/mapbox/streets-v11', // style URL
+  center: [mapCenterLon, mapCenterLat],
+  zoom: mapZoom
+});
+
+var hoveredDivisionID = null;
+
+map.scrollZoom.disable();
+map.addControl(new mapboxgl.NavigationControl());
+
+map.on('load', function () {
+  map.addSource('divs', {
+    type: 'geojson',
+    data: divisionGeojson
+  });
+
+  if (divisionID == 'foreign') {
+    map.addSource('offices', {
+      type: 'geojson',
+      data: officesGeojson,
+      tolerance: 0,
+      cluster: true,
+      clusterMaxZoom: 9, // Max zoom to cluster points on
+      clusterRadius: 10 // Radius of each cluster when clustering points (defaults to 50)
+    });
+    addMarkers();
+    addDivisionsLayer();
+    addDivisionBordersLayer();
+    addSymbolLayer(  0.5, true, true);
+    // Add clustering if not on the landing page
+    if (mapScope === 'detail') {
+      addClustersLayers(map);
+    }
+  }
+  else {
+    map.addSource('offices', {
+      type: 'geojson',
+      data: officesGeojson,
+      tolerance: 0
+    });
+    addMarkers();
+    addDivisionsLayer();
+    addDivisionBordersLayer();
+    // Default to domestic divisions map.
+    addSymbolLayer( 0.5, true, true);
+  }
+
+
+  // if ((!isNaN(divisionID)) && (divisionID == "domestic" || divisionID == "foreign")) {
+
+    if (mapScope === 'landing') {
+      // When the user moves their mouse over the divisions layer, update the
+      // feature state for the division under the mouse.
+      map.on('mousemove', 'divisions', function (e) {
+        if (e.features.length > 0) {
+          if (hoveredDivisionID) {
+            map.setFeatureState(
+              {source: 'divs', id: hoveredDivisionID},
+              {hover: false}
+            );
+          }
+          hoveredDivisionID = e.features[0].id;
+          map.setFeatureState(
+            {source: 'divs', id: hoveredDivisionID},
+            {hover: true}
+          );
+        }
+      });
+
+      // When the mouse leaves the divisions layer, update the feature state of
+      // the previously hovered division.
+      map.on('mouseleave', 'divisions', function () {
+        if (hoveredDivisionID) {
+          map.setFeatureState(
+            {source: 'divs', id: hoveredDivisionID},
+            {hover: false}
+          );
+        }
+        hoveredDivisionID = null;
+      });
+    }
+
+    // When a click event occurs on a cluster, open a popup at the
+    // location of the cluster, with the description HTML from the properties
+    // of the clustered offices.
+    map.on('click', 'clusters', function (e) {
+      recentClicks="clusters";
+      var features = map.queryRenderedFeatures(e.point, {
+        layers: ['clusters']
+      });
+      var clusterId = features[0].properties.cluster_id;
+      map.getSource('offices').getClusterExpansionZoom(
+        clusterId,
+        function (err, zoom) {
+          if (err) return;
+
+          map.easeTo({
+            center: features[0].geometry.coordinates,
+            zoom: 9
+          });
+        }
+      );
+    });
+
+// When a click event occurs on a feature in the places layer, open a popup at the
+    // location of the feature, with description HTML from its properties.
+    map.on('click', 'offices', function (e) {
+      if(recentClicks==="clusters") {
+        recentClicks=null;
+        return;
+      }
+      recentClicks='offices';
+      var coordinates = e.features[0].geometry.coordinates.slice();
+      var title = e.features[0].properties.title;
+      var country = e.features[0].properties.country;
+      var type = e.features[0].properties.type;
+      var html = "<p><strong>";
+      html += title;
+      if (country) {
+        html += ", " + country
+      }
+      html += "</strong><br/>";
+      html += type;
+      html += "</p>";
+
+      // Ensure that if the map is zoomed out such that multiple
+      // copies of the feature are visible, the popup appears
+      // over the copy being pointed to.
+      while (Math.abs(e.lngLat.lng - coordinates[0]) > 180) {
+        coordinates[0] += e.lngLat.lng > coordinates[0] ? 360 : -360;
+      }
+
+      new mapboxgl.Popup()
+        .setLngLat(coordinates)
+        .setHTML(html)
+        .addTo(map);
+    });
+
+    map.on('click', 'divisions', function (e) {
+      var title = e.features[0].properties.name;
+      var url = "/group/" + e.features[0].properties.id;
+      var html = "<p><strong>";
+
+      if(recentClicks==="clusters" || recentClicks==='offices') {
+        recentClicks=null;
+        return;
+      }
+      if (divisionID == "foreign") {
+        var groupName = "Region";
+      } else {
+        var groupName = "Division";
+      }
+      html += title;
+      html += " " + groupName
+      html += "</strong><br/>";
+      // If on a landing page, add a link to the division/region.
+      if (mapScope == 'landing') {
+        html += "<a href='" + url + "'>Visit " + groupName + " Page</a><br/>";
+      }
+      html += "</p>";
+
+      new mapboxgl.Popup()
+        .setLngLat(e.lngLat)
+        .setHTML(html)
+        .addTo(map);
+    });
+
+    map.on("styleimagemissing", e => {
+      map.loadImage(markerPath+e.id+'-'+mapColor.replace('#', '').toUpperCase()+".png", (error, image) => {
+        if (error) throw error;
+        if (!map.hasImage(e.id)) map.addImage(e.id, image);
+        map.getSource('markers').setData(url);
+      });
+    });
+
+  // }
+
+  // Change the cursor to a pointer when the mouse is over the places layer.
+  map.on('mouseenter', 'offices', function () {
+    map.getCanvas().style.cursor = 'pointer';
+  });
+
+  // Change it back to a pointer when it leaves.
+  map.on('mouseleave', 'offices', function () {
+    map.getCanvas().style.cursor = '';
+  });
+
+  map.getCanvas().style.cursor = 'default';
+});
+
+
+function addSymbolLayer(textRadialOffset, iconAllowOverlap, textAllowOverlap) {
+  map.addLayer({
+    id: 'offices',
+    type: 'symbol',
+    source: 'offices',
+    // filter: ['!', ['has', 'point_count']],
+    layout: {
+      'icon-image': '{icon}',
+      'icon-anchor': 'bottom',
+      // get the title name from the source's "title" property
+      'text-field': ['get', 'title'],
+      'text-font': [
+        'Open Sans Semibold',
+        'Arial Unicode MS Bold'
+      ],
+      'text-size': 12,
+      'text-radial-offset': textRadialOffset,
+      'text-variable-anchor': ['top', 'bottom', 'left', 'right'],
+      'text-justify': 'auto',
+      'icon-allow-overlap': iconAllowOverlap,
+      'text-allow-overlap': textAllowOverlap,
+    },
+  });
+}
+
+function addDivisionBordersLayer() {
+  map.addLayer({
+    'id': 'division-borders',
+    'type': 'line',
+    'source': 'divs',
+    'layout': {},
+    'paint': {
+      'line-color': ['get', 'color'],
+      'line-width': 1
+    },
+    'filter': ['==', 'type', divisionID]
+  });
+}
+
+function addDivisionsLayer() {
+  map.addLayer({
+    'id': 'divisions',
+    'type': 'fill',
+    'source': 'divs',
+    'layout': {},
+    'paint': {
+      'fill-color': ['get', 'color'],
+      'fill-opacity': [
+        'case',
+        ['boolean', ['feature-state', 'hover'], false],
+        0.8,
+        0.5
+      ]
+    },
+    'filter': ['==', 'type', divisionID]
+  });
+}
+
+function addClustersLayers() {
+  map.addLayer({
+    id: 'clusters',
+    type: 'circle',
+    source: 'offices',
+    filter: ['has', 'point_count'],
+    paint: {
+      'circle-color': mapColor,
+      'circle-radius': 20,
+    }
+  });
+  map.addLayer({
+    id: 'cluster-count',
+    type: 'symbol',
+    source: 'offices',
+    filter: ['has', 'point_count'],
+    layout: {
+      'text-field': '{point_count_abbreviated}',
+      'text-font': ['DIN Offc Pro Medium', 'Arial Unicode MS Bold'],
+      'text-size': 12
+    }
+  });
+}
+
+function addMarkers() {
+  markerTypes.forEach (
+  marker => {
+    map.loadImage(markerPath + marker + '-' + mapColor.replace('#', '').toUpperCase() + '.png', (error, image) => {
+      if (error) throw error;
+      map.addImage(marker, image);
+    })
+  });
+}
